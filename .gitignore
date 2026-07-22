@@ -1,0 +1,15 @@
+# Build output
+LidSleepToggle.app/
+build/
+*.o
+*.dSYM/
+
+# Logs and local state
+*.log
+.DS_Store
+Thumbs.db
+
+# Editor / tooling
+.claude-flow/
+.claude/
+Sources/*.bak-*
