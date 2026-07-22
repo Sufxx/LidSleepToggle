@@ -15,6 +15,7 @@ private typealias HIDSetMatching = @convention(c) (AnyObject, CFDictionary) -> V
 private typealias HIDCopyServices = @convention(c) (AnyObject) -> Unmanaged<CFArray>?
 private typealias HIDServiceCopyEvent = @convention(c) (AnyObject, Int64, Int32, Int64) -> Unmanaged<AnyObject>?
 private typealias HIDEventGetFloatValue = @convention(c) (AnyObject, Int32) -> Double
+private typealias HIDServiceCopyProperty = @convention(c) (AnyObject, CFString) -> Unmanaged<AnyObject>?
 
 private let kIOHIDEventTypeTemperature: Int64 = 15
 
@@ -23,6 +24,7 @@ final class ThermalSensors {
     private var services: [AnyObject] = []
     private var copyEvent: HIDServiceCopyEvent?
     private var getFloat: HIDEventGetFloatValue?
+    private(set) var sensorNames: [String] = []
 
     init() {
         guard let iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW),
@@ -38,20 +40,43 @@ final class ThermalSensors {
         let copyServices = unsafeBitCast(pServices, to: HIDCopyServices.self)
         copyEvent = unsafeBitCast(pEvent, to: HIDServiceCopyEvent.self)
         getFloat = unsafeBitCast(pFloat, to: HIDEventGetFloatValue.self)
+        let copyProp = dlsym(iokit, "IOHIDServiceClientCopyProperty")
+            .map { unsafeBitCast($0, to: HIDServiceCopyProperty.self) }
 
         guard let c = create(kCFAllocatorDefault)?.takeRetainedValue() else { return }
         client = c
         // Usage page 0xff00 / usage 0x0005 == temperature sensors.
         let matching: [String: Any] = ["PrimaryUsagePage": 0xff00, "PrimaryUsage": 0x0005]
         setMatching(c, matching as CFDictionary)
-        if let arr = copyServices(c)?.takeRetainedValue() as? [AnyObject] {
-            services = arr
+        guard let all = copyServices(c)?.takeRetainedValue() as? [AnyObject] else { return }
+
+        // Not every "temperature" sensor reports a temperature. On Apple Silicon
+        // the `PMU tcal` entries are a fixed CALIBRATION reference that never
+        // changes — taking a naive max over all sensors pins the reading to that
+        // constant and it never tracks load. Keep only the die sensors.
+        guard let copyProp = copyProp else { services = all; return }
+        var kept: [AnyObject] = []
+        var names: [String] = []
+        var fallback: [AnyObject] = []
+        for s in all {
+            let name = (copyProp(s, "Product" as CFString)?.takeRetainedValue() as? String) ?? ""
+            let lower = name.lowercased()
+            if lower.contains("tcal") { continue }          // calibration, never varies
+            if lower.contains("tdie") || lower.contains("tdev") {
+                kept.append(s); names.append(name)
+            } else {
+                fallback.append(s)
+            }
         }
+        // Prefer die sensors; if this Mac names them differently, use whatever
+        // is left after dropping the calibration entries.
+        services = kept.isEmpty ? fallback : kept
+        sensorNames = names
     }
 
     var available: Bool { !services.isEmpty && copyEvent != nil && getFloat != nil }
 
-    // Hottest sensor reading in °C, or nil when unreadable.
+    // Hottest real sensor reading in °C, or nil when unreadable.
     func hottest() -> Double? {
         guard let copyEvent = copyEvent, let getFloat = getFloat, !services.isEmpty else { return nil }
         var best = 0.0
