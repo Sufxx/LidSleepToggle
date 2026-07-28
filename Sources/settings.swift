@@ -1,4 +1,6 @@
 import SwiftUI
+import CoreImage.CIFilterBuiltins
+import AppKit
 
 // The Settings window. Everything that needs space lives here rather than in the
 // menubar popover: workload rules, safety thresholds, alert destinations, and
@@ -17,6 +19,8 @@ struct SettingsView: View {
                 .tabItem { Label("Safety", systemImage: "shield.lefthalf.filled") }
             AlertsTab(state: state)
                 .tabItem { Label("Alerts", systemImage: "bell") }
+            RemoteTab(state: state)
+                .tabItem { Label("Phone", systemImage: "iphone") }
             DashboardTab(state: state)
                 .tabItem { Label("Dashboard", systemImage: "chart.bar") }
         }
@@ -271,6 +275,93 @@ struct AlertsTab: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+// MARK: - Phone (remote control)
+
+struct RemoteTab: View {
+    @ObservedObject var state: AppState
+
+    // Everything the phone app needs to pair, in one scannable payload.
+    private var pairingURL: String {
+        "lidsleep://pair?topic=\(state.remoteTopic)&token=\(state.remoteToken)"
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                GroupBox("Remote control") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Let the LidSleepToggle iPhone app control this Mac", isOn: Binding(
+                            get: { state.remoteEnabled },
+                            set: { state.remoteEnabled = $0; state.onSettingsChanged() }))
+                        Note(text: "Uses ntfy.sh: the Mac listens on a private, random topic and only obeys commands carrying your secret token. The Mac must be awake and online to be reached — which is exactly the case when it's in your bag keeping work alive. Remote sleep works; a fully-asleep Mac can't be woken remotely.")
+                    }
+                    .padding(6).frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if state.remoteEnabled && !state.remoteTopic.isEmpty {
+                    GroupBox("Pair your iPhone") {
+                        HStack(alignment: .top, spacing: 14) {
+                            if let img = Self.qr(pairingURL) {
+                                Image(nsImage: img)
+                                    .interpolation(.none)
+                                    .resizable()
+                                    .frame(width: 132, height: 132)
+                                    .background(Color.white)
+                                    .cornerRadius(6)
+                            }
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Scan this in the LidSleepToggle iPhone app → Add Mac.")
+                                    .font(.system(size: 11))
+                                field("Topic", state.remoteTopic)
+                                field("Token", state.remoteToken)
+                                Button("Copy pairing link") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(pairingURL, forType: .string)
+                                }
+                                .controlSize(.small)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(6)
+                    }
+
+                    GroupBox("Manual (no app yet)") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Note(text: "You can also drive it from anything that can POST to ntfy. Sleep the Mac:")
+                            Text("curl -d '{\"token\":\"\(state.remoteToken)\",\"action\":\"sleep\"}' \\\n  https://ntfy.sh/\(state.remoteTopic)-cmd")
+                                .font(.system(size: 10, design: .monospaced))
+                                .textSelection(.enabled)
+                                .padding(7)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
+                            Note(text: "Actions: sleep · mode:normal · mode:always · mode:auto · status. Live status is published to https://ntfy.sh/\(state.remoteTopic)-stats")
+                        }
+                        .padding(6).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func field(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 6) {
+            Text(label).font(.system(size: 10)).foregroundStyle(.tertiary).frame(width: 42, alignment: .leading)
+            Text(value).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+        }
+    }
+
+    static func qr(_ string: String) -> NSImage? {
+        let ctx = CIContext()
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(string.utf8)
+        filter.correctionLevel = "M"
+        guard let out = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)),
+              let cg = ctx.createCGImage(out, from: out.extent) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: out.extent.width, height: out.extent.height))
     }
 }
 
