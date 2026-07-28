@@ -13,3 +13,9 @@ Thumbs.db
 .claude-flow/
 .claude/
 Sources/*.bak-*
+
+# iOS build artifacts
+ios/build/
+ios/DerivedData/
+*.xcuserstate
+ios/**/xcuserdata/

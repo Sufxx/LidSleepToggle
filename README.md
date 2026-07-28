@@ -55,7 +55,29 @@ lidkeep --sleep -- python train.py   # sleep the Mac when it finishes
 
 Works in any mode, including "Sleep on Lid Close". Install it from **Settings → General**.
 
-## Install
+## iPhone app + widget
+
+Control the Mac and see its status from your phone — the point being you can tell a Mac that's awake in your bag to go to sleep, without taking it out.
+
+- **App** — live dashboard: battery, CPU temperature, CPU load, lid state, current mode, and what's keeping it awake. Tap to change mode or Sleep Now.
+- **Home Screen / Lock Screen widget** — the same status at a glance, with interactive Sleep / Auto / Refresh buttons (iOS 17+).
+- **Control Center control** (iOS 18+) and **Siri** — "Sleep my Mac" as a one-tap toggle or voice command.
+
+**How it connects:** the Mac (Settings → Phone → enable remote control) subscribes to a private, random [ntfy.sh](https://ntfy.sh) topic and publishes a status snapshot to a sibling topic. Every command carries a secret token, so knowing the topic isn't enough to control the Mac. Pair by scanning the QR code the Mac shows, or paste the topic + token.
+
+**Limits, honestly:** the Mac must be **awake and online** to be reached — which is exactly the "awake in a bag keeping work alive" case. A fully asleep Mac isn't listening, so you can remote-*sleep* it but not remote-*wake* it (that needs Wake-on-LAN and isn't reliable from a bag). If the Mac has no network, nothing gets through until it reconnects.
+
+The project lives in [`ios/`](ios/). It's an [XcodeGen](https://github.com/yon3z/XcodeGen) project:
+
+```bash
+cd ios
+xcodegen generate        # regenerates LidSleepToggle.xcodeproj from project.yml
+open LidSleepToggle.xcodeproj
+```
+
+Set your team under Signing & Capabilities for both targets (the app and the widget share the `group.com.sufwan.lidsleeptoggle` App Group), then build to your device. Requires iOS 17+ (the Control Center control needs iOS 18+, gated at runtime).
+
+## Install (Mac)
 
 Requires macOS 13+. Build from source (no Xcode needed, just the command line tools):
 
