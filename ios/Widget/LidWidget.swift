@@ -230,25 +230,33 @@ struct LidWidgetView: View {
     // MARK: Lock Screen
 
     private func lockRect(_ s: LidStatus) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: s.statusSymbol)
-                .font(.system(size: 18, weight: .semibold))
-                .widgetAccentable()
-            VStack(alignment: .leading, spacing: 1) {
+        // accessoryRectangular is ~160pt wide and non-negotiable — two full-width
+        // lines that scale down beat three icon-labels that wrap vertically.
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                Image(systemName: s.statusSymbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .widgetAccentable()
                 Text(s.headline)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
                     .lineLimit(1)
-                HStack(spacing: 7) {
-                    Label(s.batteryText, systemImage: s.batterySymbol)
-                    if s.temp >= 0 { Label("\(s.temp)°", systemImage: "thermometer.medium") }
-                    Label(s.lidClosed ? "Shut" : "Open",
-                          systemImage: s.lidClosed ? "laptopcomputer.slash" : "laptopcomputer")
-                }
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
+                    .minimumScaleFactor(0.7)
             }
-            Spacer(minLength: 0)
+            Text(lockStats(s))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func lockStats(_ s: LidStatus) -> String {
+        var parts = [s.batteryText]
+        if s.temp >= 0 { parts.append("\(s.temp)°C") }
+        parts.append(s.lidClosed ? "lid shut" : "lid open")
+        return parts.joined(separator: " · ")
     }
 
     private func lockInline(_ s: LidStatus) -> some View {
