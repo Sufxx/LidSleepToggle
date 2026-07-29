@@ -102,10 +102,11 @@ final class BLELink: NSObject, CBPeripheralManagerDelegate {
                 peripheral.respond(to: request, withResult: .requestNotSupported)
                 continue
             }
-            guard let cmd = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  (cmd["token"] as? String) == token, !token.isEmpty,
-                  let action = cmd["action"] as? String else {
-                log("ble: rejected write (bad token or malformed)")
+            // Same HMAC envelope as the relay: a nearby stranger (or a BLE
+            // sniffer) can neither forge a command nor learn the token.
+            guard let (id, action) = verifyCommand(data, token: token),
+                  CommandDedup.firstTime(id) else {
+                log("ble: rejected write (unverified or replayed)")
                 peripheral.respond(to: request, withResult: .insufficientAuthorization)
                 continue
             }
@@ -131,16 +132,21 @@ final class BLELink: NSObject, CBPeripheralManagerDelegate {
             reasons = Array(reasons.prefix(4))
             snap["reasons"] = reasons
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: snap) else { return }
+        guard let json = try? JSONSerialization.data(withJSONObject: snap) else { return }
         // The timestamp changes every call; compare without it to avoid
         // notifying subscribers about nothing.
-        let changed = normalized(data) != normalized(currentStatus)
-        currentStatus = data
+        let changed = normalized(json) != lastPlain
+        lastPlain = normalized(json)
+        // Sealed end-to-end: a nearby scanner that connects and reads the
+        // characteristic without the token sees only ciphertext.
+        guard let sealed = sealStatus(json, token: token) else { return }
+        currentStatus = sealed
         guard changed, subscribers > 0, let manager = manager, let ch = statusChar else { return }
-        let payload = data.count <= notifyLimit ? data : Data("!".utf8)
+        let payload = sealed.count <= notifyLimit ? sealed : Data("!".utf8)
         manager.updateValue(payload, for: ch, onSubscribedCentrals: nil)
     }
 
+    private var lastPlain: Data?
     private func normalized(_ d: Data) -> Data? {
         guard var obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
         obj.removeValue(forKey: "t")

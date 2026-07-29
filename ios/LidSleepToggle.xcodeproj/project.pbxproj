@@ -20,7 +20,9 @@
 		7D6FFCCD806329F30D3CD2E9 /* Pairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = C32F688A42856C1FB8639081 /* Pairing.swift */; };
 		81CF1DA7566B1DEE700FBAD0 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4CFF97A3F536F4CACDA5B4 /* RootView.swift */; };
 		90DBF39A67D3574536AA3F69 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2261C80B90A4C817DFF5EA9C /* Components.swift */; };
+		BEF0A4855463171F698AB885 /* LidCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CFA4807C7A0A3292F864C19 /* LidCrypto.swift */; };
 		C519B277832CAA17701C93E1 /* LidWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4477502EE09F50C97EE9702B /* LidWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EB451C65BC00B07A6E06F13C /* LidCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CFA4807C7A0A3292F864C19 /* LidCrypto.swift */; };
 		F6B5AA061ED990A135E56AC8 /* Presentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92890341BD33D69439AEA009 /* Presentation.swift */; };
 /* End PBXBuildFile section */
 
@@ -50,6 +52,7 @@
 
 /* Begin PBXFileReference section */
 		069DA85CB4118963D03B42A9 /* LidWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LidWidget.swift; sourceTree = "<group>"; };
+		0CFA4807C7A0A3292F864C19 /* LidCrypto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LidCrypto.swift; sourceTree = "<group>"; };
 		12534E147B39C32338BF2C7F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2261C80B90A4C817DFF5EA9C /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		2D024BAC7F54FC18EA73D177 /* LidIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LidIntents.swift; sourceTree = "<group>"; };
@@ -73,6 +76,7 @@
 			isa = PBXGroup;
 			children = (
 				E2DA04850D6AB4E0EC7DC6DF /* LidClient.swift */,
+				0CFA4807C7A0A3292F864C19 /* LidCrypto.swift */,
 				2D024BAC7F54FC18EA73D177 /* LidIntents.swift */,
 				92890341BD33D69439AEA009 /* Presentation.swift */,
 			);
@@ -223,6 +227,7 @@
 				90DBF39A67D3574536AA3F69 /* Components.swift in Sources */,
 				0241E55A81561F7C73873BFD /* LidApp.swift in Sources */,
 				67BA335F98E9F737184CFF75 /* LidClient.swift in Sources */,
+				BEF0A4855463171F698AB885 /* LidCrypto.swift in Sources */,
 				1BB9520833F280AD5C61486C /* LidIntents.swift in Sources */,
 				7D6FFCCD806329F30D3CD2E9 /* Pairing.swift in Sources */,
 				4923EBD869894C57BC57FD06 /* Presentation.swift in Sources */,
@@ -236,6 +241,7 @@
 			files = (
 				2BF76FDA1EB8C922C7E244F6 /* LidClient.swift in Sources */,
 				57B5C04F621FD458F3C24AC1 /* LidControl.swift in Sources */,
+				EB451C65BC00B07A6E06F13C /* LidCrypto.swift in Sources */,
 				54BBEB9022AB5D10CAC60EE7 /* LidIntents.swift in Sources */,
 				0FFC0E4461D4A12D6822A125 /* LidWidget.swift in Sources */,
 				F6B5AA061ED990A135E56AC8 /* Presentation.swift in Sources */,

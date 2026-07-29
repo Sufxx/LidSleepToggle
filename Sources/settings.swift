@@ -342,16 +342,21 @@ struct RemoteTab: View {
                         .padding(6)
                     }
 
-                    GroupBox("Manual (no app yet)") {
+                    GroupBox("Manual (scripting)") {
                         VStack(alignment: .leading, spacing: 6) {
-                            Note(text: "You can also drive it from anything that can POST to ntfy. Sleep the Mac:")
-                            Text("curl -d '{\"token\":\"\(state.remoteToken)\",\"action\":\"sleep\"}' \\\n  https://ntfy.sh/\(state.remoteTopic)-cmd")
-                                .font(.system(size: 10, design: .monospaced))
+                            Note(text: "Commands are HMAC-signed — the token never crosses the relay, and relays can't forge or replay commands. Status on the relay is AES-GCM encrypted. Sleep the Mac from a shell:")
+                            Text("""
+                            ID=$(uuidgen); TS=$(date +%s)
+                            MAC=$(printf "$ID|$TS|sleep" | openssl dgst -sha256 -hmac '\(state.remoteToken)' -r | cut -d' ' -f1)
+                            curl -d "{\\"id\\":\\"$ID\\",\\"ts\\":$TS,\\"action\\":\\"sleep\\",\\"mac\\":\\"$MAC\\"}" \\
+                              https://ntfy.sh/\(state.remoteTopic)-cmd
+                            """)
+                                .font(.system(size: 9, design: .monospaced))
                                 .textSelection(.enabled)
                                 .padding(7)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
-                            Note(text: "Actions: sleep · mode:normal · mode:always · mode:auto · status. Live status is published to https://ntfy.sh/\(state.remoteTopic)-stats")
+                            Note(text: "Actions: sleep · mode:normal · mode:always · mode:auto · status. Commands are accepted via ntfy.sh AND ntfy.envs.net for redundancy.")
                         }
                         .padding(6).frame(maxWidth: .infinity, alignment: .leading)
                     }

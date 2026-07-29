@@ -21,6 +21,25 @@ protocol RemoteHost: AnyObject {
     func remoteStatsSnapshot() -> [String: Any]
 }
 
+// Logical-command dedup shared by every relay instance: one command published
+// to N servers for redundancy must execute exactly once.
+enum CommandDedup {
+    private static var order: [String] = []
+    private static var seen: Set<String> = []
+    private static let q = DispatchQueue(label: "lidsleep.cmd-dedup")
+
+    static func firstTime(_ id: String?) -> Bool {
+        guard let id = id, !id.isEmpty else { return true }   // no id: legacy sender
+        return q.sync {
+            if seen.contains(id) { return false }
+            seen.insert(id)
+            order.append(id)
+            if order.count > 300 { seen.remove(order.removeFirst()) }
+            return true
+        }
+    }
+}
+
 // One dispatcher shared by every transport (ntfy relay, Bluetooth link), so a
 // command means the same thing no matter how it arrived.
 @discardableResult
@@ -54,13 +73,10 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
     var enabled: Bool { cfgBool("remoteEnabled", false) }
     var base: String { UserDefaults.standard.string(forKey: "remoteTopic") ?? "" }
     var token: String { UserDefaults.standard.string(forKey: "remoteToken") ?? "" }
-    // Configurable relay server: the escape hatch for when one public instance
-    // is blocked or down (observed: ntfy.sh:443 unreachable while other hosts
-    // were fine). `defaults write com.sufwan.lidsleeptoggle remoteServer <url>`.
-    var server: String {
-        let s = UserDefaults.standard.string(forKey: "remoteServer") ?? ""
-        return s.isEmpty ? "https://ntfy.sh" : s
-    }
+    // The relay server this instance talks to. The app runs one RemoteControl
+    // per server in `relayServers()` for redundancy — observed failure mode: a
+    // network silently blocking ntfy.sh:443 while other instances were fine.
+    let server: String
     var cmdTopic: String { base + "-cmd" }
     var statsTopic: String { base + "-stats" }
 
@@ -75,13 +91,22 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
         return URLSession(configuration: cfg)
     }()
 
-    override init() {
+    init(server: String) {
+        self.server = server
         super.init()
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 0            // no timeout on the stream
         cfg.timeoutIntervalForResource = 0
         cfg.waitsForConnectivity = true
         session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+    }
+
+    // The relay servers to run in parallel. A custom server (defaults key
+    // `remoteServer`) replaces the built-in pair; otherwise both public
+    // instances are used so no single blocked host kills the phone link.
+    static func relayServers() -> [String] {
+        let custom = UserDefaults.standard.string(forKey: "remoteServer") ?? ""
+        return custom.isEmpty ? ["https://ntfy.sh", "https://ntfy.envs.net"] : [custom]
     }
 
     // Create a random topic + token the first time remote control is turned on.
@@ -107,7 +132,7 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
         running = true
         reconnectDelay = 2
         connect()
-        log("remote: started on topic \(base)")
+        log("remote: started on topic \(base) via \(server)")
         pushStats(force: true)
     }
 
@@ -182,15 +207,18 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
         }
 
         guard let body = env["message"] as? String,
-              let inner = body.data(using: .utf8),
-              let cmd = try? JSONSerialization.jsonObject(with: inner) as? [String: Any] else { return }
+              let inner = body.data(using: .utf8) else { return }
 
-        guard (cmd["token"] as? String) == token, !token.isEmpty else {
-            log("remote: rejected command with bad/missing token")
+        // HMAC-verified envelope only — the token itself never crosses the
+        // relay, so a relay operator can neither forge commands nor steal it.
+        guard let (id, action) = verifyCommand(inner, token: token) else {
+            log("remote: rejected unverified command (via \(server))")
             return
         }
-        guard let action = cmd["action"] as? String else { return }
-        log("remote: command \(action)")
+        // Cross-server dedup: the phone publishes each command to every relay
+        // for redundancy, carrying one client-generated id. First arrival wins.
+        guard CommandDedup.firstTime(id) else { return }
+        log("remote: command \(action) (via \(server))")
         DispatchQueue.main.async { [weak self] in self?.dispatch(action) }
     }
 
@@ -212,7 +240,9 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
 
         var snap = host.remoteStatsSnapshot()
         snap["t"] = Int(now.timeIntervalSince1970)
-        guard let payload = try? JSONSerialization.data(withJSONObject: snap),
+        // Status is sealed end-to-end: the relay stores only ciphertext.
+        guard let json = try? JSONSerialization.data(withJSONObject: snap),
+              let sealed = sealStatus(json, token: token),
               let url = URL(string: "\(server)/\(statsTopic)") else { return }
 
         var req = URLRequest(url: url)
@@ -220,7 +250,7 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
         // Retain only the latest snapshot server-side; the phone polls for it.
         req.setValue("1", forHTTPHeaderField: "X-Cache")
         req.setValue("no", forHTTPHeaderField: "X-Firebase")
-        req.httpBody = payload
+        req.httpBody = sealed.base64EncodedData()
         // Short-timeout session: an unreachable relay drops the push instead of
         // queueing uploads forever on the timeout-free streaming session.
         postSession.dataTask(with: req).resume()

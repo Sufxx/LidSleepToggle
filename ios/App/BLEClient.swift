@@ -117,7 +117,9 @@ final class BLEClient: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
                     didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic.uuid == bleStatusUUID,
               let data = characteristic.value, !data.isEmpty else { return }
-        if let s = try? JSONDecoder().decode(LidStatus.self, from: data) {
+        // The value is AES-GCM ciphertext (binary over BLE).
+        if let plain = openStatus(data, token: LidStore.token),
+           let s = try? JSONDecoder().decode(LidStatus.self, from: plain) {
             onStatus?(s)
         } else if data.count < 8 {
             // A nudge: the full snapshot didn't fit in one notification. A read
@@ -130,9 +132,9 @@ final class BLEClient: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate 
 
     @discardableResult
     func send(_ command: LidCommand) -> Bool {
-        guard isConnected, let p = peripheral, let ch = cmdChar else { return false }
-        let payload = ["token": LidStore.token, "action": command.rawValue]
-        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return false }
+        guard isConnected, let p = peripheral, let ch = cmdChar,
+              let data = signedCommandBody(token: LidStore.token, action: command.rawValue)
+        else { return false }
         p.writeValue(data, for: ch, type: .withResponse)
         return true
     }

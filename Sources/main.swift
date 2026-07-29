@@ -301,7 +301,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let stats = Stats()
     let notifier = Notifier()
     let displayAssertion = DisplayAssertion()
-    let remote = RemoteControl()
+    var remotes: [RemoteControl] = []
     let ble = BLELink()
     var vetoNotified = false
     var expiresAt: Date?
@@ -371,16 +371,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         displayAssertion.set(state.preventDisplaySleep)
 
         // Phone control, if enabled: Bluetooth LE direct link (primary, works
-        // with no internet) + ntfy relay (fallback, works from anywhere).
-        remote.host = self
+        // with no internet) + redundant relays (fallback, works from anywhere;
+        // one instance per server so a single blocked host can't kill it).
+        remotes = RemoteControl.relayServers().map { RemoteControl(server: $0) }
+        remotes.forEach { $0.host = self }
         ble.host = self
         ble.onStateChange = { [weak self] in
             guard let self = self else { return }
             self.state.bleState = self.ble.stateText
         }
-        if remote.enabled {
+        if cfgBool("remoteEnabled", false) {
             RemoteControl.ensureCredentials()
-            remote.start()
+            remotes.forEach { $0.start() }
             ble.start()
         }
 
@@ -408,7 +410,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         if dimmed { restoreBrightness() }
         displayAssertion.set(false)
-        remote.stop()
+        remotes.forEach { $0.stop() }
         stats.end(by: "app quit")
         // Never leave the Mac unable to sleep because we went away.
         if isKeepAwakeEnabled() {
@@ -417,17 +419,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    // Start/stop both phone transports to match the current setting.
+    // Start/stop both phone transports to match the current setting. Relay
+    // instances are rebuilt so a changed server list takes effect.
     func syncRemote() {
+        remotes.forEach { $0.stop() }
         if state.remoteEnabled {
             RemoteControl.ensureCredentials()
             // Surface the generated topic/token in the Settings UI.
             state.remoteTopic = UserDefaults.standard.string(forKey: "remoteTopic") ?? ""
             state.remoteToken = UserDefaults.standard.string(forKey: "remoteToken") ?? ""
-            remote.restart()
+            remotes = RemoteControl.relayServers().map { RemoteControl(server: $0) }
+            remotes.forEach { $0.host = self; $0.start() }
             ble.start()
         } else {
-            remote.stop()
             ble.stop()
         }
     }
@@ -529,7 +533,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         UserDefaults.standard.set(m.rawValue, forKey: "mode")
         log("mode -> \(m.rawValue)")
         state.addEvent("Switched to \(m.title)")
-        remote.pushStats(force: true)
+        remotes.forEach { $0.pushStats(force: true) }
         ble.refreshStatus()
         let hours = state.timerHours
         expiresAt = (m != .normal && hours > 0) ? Date().addingTimeInterval(Double(hours) * 3600) : nil
@@ -893,7 +897,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func updateUI() {
         refreshState()
         renderIcon(awake: state.awake)
-        remote.pushStats(force: false)   // rate-limited inside
+        remotes.forEach { $0.pushStats(force: false) }   // rate-limited inside
         ble.refreshStatus()              // notifies only when the snapshot changed
     }
 

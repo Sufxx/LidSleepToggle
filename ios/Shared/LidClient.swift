@@ -22,14 +22,14 @@ enum LidStore {
         get { d.string(forKey: "macName") ?? "Mac" }
         set { d.set(newValue, forKey: "macName") }
     }
-    // Relay server, configurable so a blocked/down public instance isn't fatal.
-    // Empty means the default.
+    // Custom relay override (from the pairing QR). Empty = use the built-in
+    // redundant pair, so no single blocked host kills the internet path.
     static var server: String {
-        get {
-            let s = d.string(forKey: "server") ?? ""
-            return s.isEmpty ? "https://ntfy.sh" : s
-        }
+        get { d.string(forKey: "server") ?? "" }
         set { d.set(newValue, forKey: "server") }
+    }
+    static var servers: [String] {
+        server.isEmpty ? ["https://ntfy.sh", "https://ntfy.envs.net"] : [server]
     }
     static var isPaired: Bool { !topic.isEmpty && !token.isEmpty }
 
@@ -74,26 +74,40 @@ enum LidCommand: String {
 }
 
 enum LidClient {
-    private static var base: String { LidStore.server }
-
-    // Reads the latest cached status the Mac published. `poll=1` returns the
-    // cached message immediately instead of holding the connection open.
+    // Queries every relay in parallel and returns the freshest snapshot any of
+    // them holds — one blocked or stale server can't blind the app.
     static func fetchStatus() async -> LidStatus? {
-        let topic = LidStore.topic
-        guard !topic.isEmpty,
-              let url = URL(string: "\(base)/\(topic)-stats/json?poll=1&since=all") else { return nil }
+        let topic = LidStore.topic, token = LidStore.token
+        guard !topic.isEmpty else { return nil }
+        return await withTaskGroup(of: LidStatus?.self) { group in
+            for server in LidStore.servers {
+                group.addTask { await fetchStatus(server: server, topic: topic, token: token) }
+            }
+            var best: LidStatus?
+            for await s in group {
+                if let s = s, s.t > (best?.t ?? -1) { best = s }
+            }
+            return best
+        }
+    }
+
+    // `poll=1` returns the cached message immediately instead of holding the
+    // connection open; the last envelope wins because the Mac retains only its
+    // most recent snapshot. The body is AES-GCM ciphertext, base64-encoded.
+    private static func fetchStatus(server: String, topic: String, token: String) async -> LidStatus? {
+        guard let url = URL(string: "\(server)/\(topic)-stats/json?poll=1&since=all") else { return nil }
         do {
             var req = URLRequest(url: url)
             req.timeoutInterval = 10
             let (data, _) = try await URLSession.shared.data(for: req)
-            // ntfy returns newline-delimited JSON envelopes; the last message
-            // wins because the Mac retains only its most recent snapshot.
             var latest: LidStatus?
             for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
                 guard let env = try? JSONDecoder().decode(Envelope.self, from: Data(line.utf8)),
                       env.event == "message",
                       let msg = env.message,
-                      let s = try? JSONDecoder().decode(LidStatus.self, from: Data(msg.utf8))
+                      let blob = Data(base64Encoded: msg),
+                      let plain = openStatus(blob, token: token),
+                      let s = try? JSONDecoder().decode(LidStatus.self, from: plain)
                 else { continue }
                 latest = s
             }
@@ -103,22 +117,32 @@ enum LidClient {
         }
     }
 
+    // Publishes one signed envelope to every relay (the Mac deduplicates by
+    // envelope id). The token itself never crosses a relay.
     @discardableResult
     static func send(_ command: LidCommand) async -> Bool {
         let topic = LidStore.topic, token = LidStore.token
         guard !topic.isEmpty, !token.isEmpty,
-              let url = URL(string: "\(base)/\(topic)-cmd") else { return false }
-        let payload = ["token": token, "action": command.rawValue]
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else { return false }
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.httpBody = body
-        req.timeoutInterval = 10
-        do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
-            return (resp as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
-        } catch {
-            return false
+              let body = signedCommandBody(token: token, action: command.rawValue) else { return false }
+        return await withTaskGroup(of: Bool.self) { group in
+            for server in LidStore.servers {
+                group.addTask {
+                    guard let url = URL(string: "\(server)/\(topic)-cmd") else { return false }
+                    var req = URLRequest(url: url)
+                    req.httpMethod = "POST"
+                    req.httpBody = body
+                    req.timeoutInterval = 10
+                    do {
+                        let (_, resp) = try await URLSession.shared.data(for: req)
+                        return (resp as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
+                    } catch {
+                        return false
+                    }
+                }
+            }
+            var ok = false
+            for await r in group where r { ok = true }
+            return ok
         }
     }
 
