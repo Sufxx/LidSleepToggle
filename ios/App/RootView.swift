@@ -8,7 +8,11 @@ struct RootView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            ZStack {
+                // Backdrop lives under EVERYTHING (nav bar included) — a
+                // ScrollView hugs its content width, so a background attached
+                // to it renders as a column, not a canvas.
+                NightBackground(awake: model.status?.awake ?? false)
                 if LidStore.isPaired {
                     dashboard
                 } else {
@@ -16,6 +20,7 @@ struct RootView: View {
                 }
             }
             .navigationTitle("Lid Sleep")
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 if LidStore.isPaired {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -55,7 +60,7 @@ struct RootView: View {
 
     private var dashboard: some View {
         ScrollView {
-            VStack(spacing: 14) {
+            VStack(spacing: 15) {
                 if let s = model.status {
                     StatusHero(status: s)
                     ChipRow(status: s)
@@ -64,32 +69,36 @@ struct RootView: View {
                     if !s.reasons.isEmpty || s.holds > 0 { WorkloadCard(status: s) }
                     linkLine(s)
                 } else if model.loading {
-                    ProgressView("Reaching your Mac…").padding(.top, 60)
+                    ProgressView("Reaching your Mac…")
+                        .tint(.white)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .padding(.top, 80)
                 } else {
                     UnreachableState { await model.refresh(force: true) }
                 }
             }
+            .frame(maxWidth: .infinity)
             .padding()
         }
         .refreshable { await model.refresh(force: true) }
-        .background(Color(.systemGroupedBackground))
     }
 
     private func linkLine(_ s: LidStatus) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             switch model.link {
             case .bluetooth:
-                Image(systemName: "personalhotspot").font(.caption2)
+                Image(systemName: "personalhotspot").font(.system(size: 10, weight: .semibold))
                 Text("Nearby via Bluetooth · live")
             case .internet:
-                Image(systemName: "network").font(.caption2)
+                Image(systemName: "network").font(.system(size: 10, weight: .semibold))
                 Text("Via internet · \(s.freshnessText)")
             case .none:
                 Text(s.freshnessText)
             }
         }
-        .font(.caption2)
-        .foregroundStyle(model.link == .bluetooth ? Color.blue : Color(.tertiaryLabel))
+        .font(.system(size: 11, weight: .medium, design: .rounded))
+        .foregroundStyle(model.link == .bluetooth ? Lid.indigo : .white.opacity(0.35))
+        .padding(.top, 2)
     }
 }
 

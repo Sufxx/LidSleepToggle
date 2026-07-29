@@ -1,5 +1,24 @@
 import SwiftUI
 
+// Night-utility design language shared by the app and the widget: deep
+// midnight base, warm yellow = awake/energy, soft indigo = sleep/rest.
+enum Lid {
+    static let midnight = Color(red: 0.043, green: 0.055, blue: 0.141)   // #0B0E24
+    static let navy = Color(red: 0.078, green: 0.086, blue: 0.220)       // #141638
+    static let indigo = Color(red: 0.482, green: 0.529, blue: 1.0)       // #7B87FF
+    static let indigoDeep = Color(red: 0.357, green: 0.416, blue: 0.980) // #5B6AFA
+    static let yellow = Color(red: 1.0, green: 0.831, blue: 0.278)       // #FFD447
+    static let glass = Color.white.opacity(0.07)
+    static let glassStroke = Color.white.opacity(0.10)
+
+    static var background: LinearGradient {
+        LinearGradient(colors: [midnight, navy], startPoint: .top, endPoint: .bottom)
+    }
+    static var sleepGradient: LinearGradient {
+        LinearGradient(colors: [indigoDeep, indigo], startPoint: .leading, endPoint: .trailing)
+    }
+}
+
 // Presentation helpers shared by the app and the widget, so both render the
 // Mac's status identically.
 
@@ -38,7 +57,7 @@ extension LidStatus {
     }
     var accent: Color {
         if !veto.isEmpty { return .orange }
-        return awake ? .yellow : .secondary
+        return awake ? Lid.yellow : Lid.indigo
     }
     var statusSymbol: String {
         if !veto.isEmpty { return "exclamationmark.shield.fill" }

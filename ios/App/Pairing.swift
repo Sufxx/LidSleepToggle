@@ -11,27 +11,40 @@ struct PairEmptyState: View {
     var body: some View {
         VStack(spacing: 18) {
             Spacer()
-            Image(systemName: "laptopcomputer.and.iphone")
-                .font(.system(size: 54)).foregroundStyle(Color.accentColor)
-            Text("Connect your Mac").font(.title2.weight(.semibold))
+            ZStack {
+                Circle().fill(Lid.indigo.opacity(0.16)).frame(width: 110, height: 110).blur(radius: 18)
+                Image(systemName: "laptopcomputer.and.iphone")
+                    .font(.system(size: 52))
+                    .foregroundStyle(Lid.indigo)
+                    .shadow(color: Lid.indigo.opacity(0.7), radius: 16)
+            }
+            Text("Connect your Mac")
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
             Text("Open LidSleepToggle on your Mac → Settings → Phone, turn on remote control, and scan the QR code here.")
-                .font(.subheadline).foregroundStyle(.secondary)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center).padding(.horizontal, 30)
-            VStack(spacing: 10) {
+            VStack(spacing: 11) {
                 Button { showScanner = true } label: {
                     Label("Scan QR Code", systemImage: "qrcode.viewfinder")
-                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                        .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 12))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .frame(maxWidth: .infinity).padding(.vertical, 15)
+                        .background(Lid.sleepGradient, in: RoundedRectangle(cornerRadius: 16))
                         .foregroundStyle(.white)
+                        .shadow(color: Lid.indigoDeep.opacity(0.45), radius: 14, y: 5)
                 }
                 Button { showManual = true } label: {
-                    Text("Enter details manually").font(.subheadline)
+                    Text("Enter details manually")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.6))
                 }
             }
             .padding(.horizontal, 40)
             Spacer(); Spacer()
         }
         .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

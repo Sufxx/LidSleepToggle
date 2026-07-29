@@ -37,5 +37,7 @@
 	<string>Scan the pairing QR code shown on your Mac to connect it.</string>
 	<key>UIBackgroundModes</key>
 	<array/>
+	<key>UILaunchScreen</key>
+	<dict/>
 </dict>
 </plist>

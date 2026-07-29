@@ -5,6 +5,7 @@ struct LidApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .preferredColorScheme(.dark)   // night utility — dark by design
                 .onOpenURL { url in Pairing.handle(url) }
         }
     }

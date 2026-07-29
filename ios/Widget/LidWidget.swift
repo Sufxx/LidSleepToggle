@@ -2,9 +2,9 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-// Home Screen + Lock Screen widget. The timeline fetches the Mac's latest
-// status snapshot; medium/large sizes get interactive buttons (iOS 17+) that
-// fire App Intents without opening the app.
+// Home Screen + Lock Screen widget. Night-utility styling shared with the app:
+// midnight gradient, yellow = awake, indigo = sleep. Interactive buttons fire
+// App Intents over the relay without opening the app.
 
 struct LidEntry: TimelineEntry {
     let date: Date
@@ -29,143 +29,273 @@ struct LidProvider: TimelineProvider {
             let paired = LidStore.isPaired
             let s = paired ? await LidClient.fetchStatus() : nil
             let entry = LidEntry(date: Date(), status: s, paired: paired)
-            // Refresh cadence: WidgetKit coalesces these, ~every 15 min in practice.
             let next = Calendar.current.date(byAdding: .minute, value: 10, to: Date())!
             completion(Timeline(entries: [entry], policy: .after(next)))
         }
     }
 }
 
+// MARK: - Shared pieces
+
+private struct StatusOrb: View {
+    let status: LidStatus
+    var size: CGFloat = 34
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(status.accent.opacity(0.22))
+            Circle()
+                .strokeBorder(status.accent.opacity(0.4), lineWidth: 1)
+            Image(systemName: status.statusSymbol)
+                .font(.system(size: size * 0.44, weight: .bold))
+                .foregroundStyle(status.accent)
+        }
+        .frame(width: size, height: size)
+        .shadow(color: status.accent.opacity(0.45), radius: size * 0.35)
+    }
+}
+
+private struct StatChip: View {
+    let symbol: String
+    let text: String
+    var tint: Color = .white.opacity(0.7)
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
+            Text(text).font(.system(size: 10, weight: .semibold, design: .rounded)).monospacedDigit()
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(Lid.glass, in: Capsule())
+        .overlay(Capsule().strokeBorder(Lid.glassStroke, lineWidth: 0.5))
+    }
+}
+
+// One action tile in the 2×2 grid.
+private struct ActionTile<I: AppIntent>: View {
+    let intent: I
+    let symbol: String
+    let label: String
+    var active: Bool = false
+    var accent: Color = Lid.indigo
+
+    var body: some View {
+        Button(intent: intent) {
+            VStack(spacing: 3) {
+                Image(systemName: symbol)
+                    .font(.system(size: 14, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(active ? Lid.midnight : .white.opacity(0.85))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                active ? AnyShapeStyle(accent) : AnyShapeStyle(Lid.glass),
+                in: RoundedRectangle(cornerRadius: 12)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(active ? accent.opacity(0.9) : Lid.glassStroke, lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Widget views
+
 struct LidWidgetView: View {
     @Environment(\.widgetFamily) var family
     let entry: LidEntry
 
     var body: some View {
-        if !entry.paired {
-            unpaired
-        } else if let s = entry.status {
-            switch family {
-            case .systemSmall: small(s)
-            case .accessoryRectangular: lockRect(s)
-            case .accessoryInline: lockInline(s)
-            case .accessoryCircular: lockCircular(s)
-            default: medium(s)
+        Group {
+            if !entry.paired {
+                unpaired
+            } else if let s = entry.status {
+                switch family {
+                case .systemSmall: small(s)
+                case .accessoryRectangular: lockRect(s)
+                case .accessoryInline: lockInline(s)
+                case .accessoryCircular: lockCircular(s)
+                default: medium(s)
+                }
+            } else {
+                unreachable
             }
-        } else {
-            unreachable
         }
     }
 
-    // MARK: Home Screen
-
-    private func small(_ s: LidStatus) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Image(systemName: s.statusSymbol).foregroundStyle(s.accent)
-                Spacer()
-                Text(s.host).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Text(s.headline).font(.headline).lineLimit(2)
-            Spacer(minLength: 0)
-            HStack(spacing: 10) {
-                miniChip(s.batterySymbol, s.batteryText, s.batteryTint)
-                if s.temp >= 0 { miniChip("thermometer.medium", "\(s.temp)°", s.tempTint) }
-            }
-            Button(intent: SleepMacIntent()) {
-                Text("Sleep").font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent).controlSize(.small).tint(.accentColor)
-        }
-    }
+    // MARK: Medium — status left, 2×2 actions right
 
     private func medium(_ s: LidStatus) -> some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: s.statusSymbol).foregroundStyle(s.accent)
-                    Text(s.modeTitle).font(.subheadline.weight(.semibold)).lineLimit(1)
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 9) {
+                    StatusOrb(status: s, size: 38)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(s.headline)
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                        Text(s.host)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.5))
+                            .lineLimit(1)
+                    }
                 }
-                Text(s.subline).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                Spacer(minLength: 0)
-                HStack(spacing: 12) {
-                    miniChip(s.batterySymbol, s.batteryText, s.batteryTint)
-                    if s.temp >= 0 { miniChip("thermometer.medium", "\(s.temp)°C", s.tempTint) }
-                    miniChip(s.lidClosed ? "laptopcomputer.slash" : "laptopcomputer",
-                             s.lidClosed ? "Shut" : "Open", .secondary)
+                Spacer(minLength: 4)
+                HStack(spacing: 5) {
+                    StatChip(symbol: s.batterySymbol, text: s.batteryText,
+                             tint: s.charging ? .green : (s.battery <= 20 ? .orange : .white.opacity(0.7)))
+                    if s.temp >= 0 { StatChip(symbol: "thermometer.medium", text: "\(s.temp)°") }
+                    StatChip(symbol: s.lidClosed ? "laptopcomputer.slash" : "laptopcomputer",
+                             text: s.lidClosed ? "Shut" : "Open",
+                             tint: s.lidClosed && s.awake ? Lid.yellow : .white.opacity(0.7))
                 }
             }
-            Divider()
-            VStack(spacing: 8) {
-                Button(intent: SleepMacIntent()) {
-                    Label("Sleep", systemImage: "powersleep")
-                        .font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Grid(horizontalSpacing: 6, verticalSpacing: 6) {
+                GridRow {
+                    ActionTile(intent: SleepMacIntent(), symbol: "moon.zzz.fill", label: "Sleep",
+                               accent: Lid.indigo)
+                    ActionTile(intent: SetModeIntent(mode: .always), symbol: "bolt.fill", label: "Awake",
+                               active: s.mode == "always", accent: Lid.yellow)
                 }
-                .buttonStyle(.borderedProminent).tint(.accentColor)
-                Button(intent: SetModeIntent(mode: .auto)) {
-                    Label("Auto", systemImage: "bolt.badge.automatic.fill")
-                        .font(.caption).frame(maxWidth: .infinity)
+                GridRow {
+                    ActionTile(intent: SetModeIntent(mode: .auto), symbol: "bolt.badge.automatic.fill",
+                               label: "Auto", active: s.mode == "auto", accent: Lid.yellow)
+                    ActionTile(intent: RefreshIntent(), symbol: "arrow.clockwise", label: "Refresh")
                 }
-                .buttonStyle(.bordered)
-                Button(intent: RefreshIntent()) {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                        .font(.caption2).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
             }
-            .frame(width: 96)
+            .frame(width: 128)
         }
     }
 
-    private func miniChip(_ symbol: String, _ text: String, _ tint: Color) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: symbol).font(.caption2)
-            Text(text).font(.caption2.weight(.medium)).monospacedDigit()
+    // MARK: Small — status + one smart action
+
+    private func small(_ s: LidStatus) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                StatusOrb(status: s, size: 32)
+                Spacer()
+                StatChip(symbol: s.batterySymbol, text: s.batteryText,
+                         tint: s.charging ? .green : (s.battery <= 20 ? .orange : .white.opacity(0.7)))
+            }
+            Spacer(minLength: 4)
+            Text(s.headline)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+            if s.temp >= 0 {
+                Text("\(s.temp)°C · \(s.lidClosed ? "lid shut" : "lid open")")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            Spacer(minLength: 6)
+            // The one action that matters given the current state.
+            if s.awake {
+                smartButton(intent: SleepMacIntent(), symbol: "moon.zzz.fill",
+                            label: "Sleep", fill: AnyShapeStyle(Lid.sleepGradient), fg: .white)
+            } else {
+                smartButton(intent: SetModeIntent(mode: .always), symbol: "bolt.fill",
+                            label: "Keep Awake", fill: AnyShapeStyle(Lid.yellow), fg: Lid.midnight)
+            }
         }
-        .foregroundStyle(tint)
+    }
+
+    private func smartButton<I: AppIntent>(intent: I, symbol: String, label: String,
+                                           fill: AnyShapeStyle, fg: Color) -> some View {
+        Button(intent: intent) {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 11, weight: .bold))
+                Text(label).font(.system(size: 12, weight: .bold, design: .rounded))
+            }
+            .foregroundStyle(fg)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(fill, in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Lock Screen
 
     private func lockRect(_ s: LidStatus) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Image(systemName: s.statusSymbol)
-                Text(s.modeTitle).font(.caption.weight(.semibold)).lineLimit(1)
+        HStack(spacing: 8) {
+            Image(systemName: s.statusSymbol)
+                .font(.system(size: 18, weight: .semibold))
+                .widgetAccentable()
+            VStack(alignment: .leading, spacing: 1) {
+                Text(s.headline)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                HStack(spacing: 7) {
+                    Label(s.batteryText, systemImage: s.batterySymbol)
+                    if s.temp >= 0 { Label("\(s.temp)°", systemImage: "thermometer.medium") }
+                    Label(s.lidClosed ? "Shut" : "Open",
+                          systemImage: s.lidClosed ? "laptopcomputer.slash" : "laptopcomputer")
+                }
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
             }
-            Text(s.headline).font(.caption2).lineLimit(1)
-            HStack(spacing: 8) {
-                Label(s.batteryText, systemImage: s.batterySymbol)
-                if s.temp >= 0 { Label("\(s.temp)°", systemImage: "thermometer.medium") }
-            }
-            .font(.caption2).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
         }
     }
+
     private func lockInline(_ s: LidStatus) -> some View {
-        Label("\(s.modeTitle) · \(s.batteryText)", systemImage: s.statusSymbol)
+        Label("Mac \(s.awake ? "awake" : "sleeps") · \(s.batteryText)", systemImage: s.statusSymbol)
     }
+
     private func lockCircular(_ s: LidStatus) -> some View {
         ZStack {
             AccessoryWidgetBackground()
-            Image(systemName: s.statusSymbol).font(.title3)
+            VStack(spacing: 0) {
+                Image(systemName: s.statusSymbol)
+                    .font(.system(size: 16, weight: .semibold))
+                    .widgetAccentable()
+                Text(s.batteryText)
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+            }
         }
     }
 
     // MARK: States
 
     private var unpaired: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "laptopcomputer.and.iphone").font(.title2)
-            Text("Open the app to connect your Mac").font(.caption2)
-                .multilineTextAlignment(.center).foregroundStyle(.secondary)
+        VStack(spacing: 7) {
+            Image(systemName: "laptopcomputer.and.iphone")
+                .font(.title2).foregroundStyle(Lid.indigo)
+            Text("Open the app to\nconnect your Mac")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white.opacity(0.6))
         }
     }
+
     private var unreachable: some View {
-        VStack(spacing: 6) {
-            Image(systemName: "wifi.exclamationmark").font(.title2).foregroundStyle(.orange)
-            Text("Mac unreachable").font(.caption).foregroundStyle(.secondary)
+        VStack(spacing: 7) {
+            Image(systemName: "moon.haze.fill").font(.title2).foregroundStyle(Lid.indigo)
+            Text("Mac unreachable")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.6))
             Button(intent: RefreshIntent()) {
-                Text("Retry").font(.caption2)
-            }.buttonStyle(.bordered).controlSize(.small)
+                Text("Retry")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(Lid.glass, in: Capsule())
+            }
+            .buttonStyle(.plain)
         }
     }
 }
@@ -174,7 +304,7 @@ struct LidWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "LidWidget", provider: LidProvider()) { entry in
             LidWidgetView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+                .containerBackground(for: .widget) { Lid.background }
         }
         .configurationDisplayName("Lid Sleep")
         .description("See and control your Mac's lid-close sleep.")
