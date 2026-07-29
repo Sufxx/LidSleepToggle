@@ -33,6 +33,7 @@ targets:
       properties:
         CFBundleDisplayName: Lid Sleep
         NSCameraUsageDescription: Scan the pairing QR code shown on your Mac to connect it.
+        NSBluetoothAlwaysUsageDescription: Connects directly to your Mac over Bluetooth to control it when it has no internet (e.g. closed in a bag).
         CFBundleURLTypes:
           - CFBundleURLName: com.sufwan.lidsleeptoggle
             CFBundleURLSchemes: [lidsleep]

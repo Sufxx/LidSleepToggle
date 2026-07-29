@@ -22,6 +22,15 @@ enum LidStore {
         get { d.string(forKey: "macName") ?? "Mac" }
         set { d.set(newValue, forKey: "macName") }
     }
+    // Relay server, configurable so a blocked/down public instance isn't fatal.
+    // Empty means the default.
+    static var server: String {
+        get {
+            let s = d.string(forKey: "server") ?? ""
+            return s.isEmpty ? "https://ntfy.sh" : s
+        }
+        set { d.set(newValue, forKey: "server") }
+    }
     static var isPaired: Bool { !topic.isEmpty && !token.isEmpty }
 
     static func clear() {
@@ -65,7 +74,7 @@ enum LidCommand: String {
 }
 
 enum LidClient {
-    private static var base: String { "https://ntfy.sh" }
+    private static var base: String { LidStore.server }
 
     // Reads the latest cached status the Mac published. `poll=1` returns the
     // cached message immediately instead of holding the connection open.

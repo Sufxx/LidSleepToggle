@@ -20,6 +20,8 @@
     <string>13.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Lets the LidSleepToggle iPhone app control this Mac directly over Bluetooth when it has no internet (e.g. closed in a bag).</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

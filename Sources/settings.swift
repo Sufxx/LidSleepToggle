@@ -283,9 +283,16 @@ struct AlertsTab: View {
 struct RemoteTab: View {
     @ObservedObject var state: AppState
 
-    // Everything the phone app needs to pair, in one scannable payload.
+    // Everything the phone app needs to pair, in one scannable payload. The
+    // relay server rides along so a non-default server propagates to the phone.
     private var pairingURL: String {
-        "lidsleep://pair?topic=\(state.remoteTopic)&token=\(state.remoteToken)"
+        let server = UserDefaults.standard.string(forKey: "remoteServer") ?? ""
+        var url = "lidsleep://pair?topic=\(state.remoteTopic)&token=\(state.remoteToken)"
+        if !server.isEmpty,
+           let enc = server.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
+            url += "&server=\(enc)"
+        }
+        return url
     }
 
     var body: some View {
@@ -296,7 +303,14 @@ struct RemoteTab: View {
                         Toggle("Let the LidSleepToggle iPhone app control this Mac", isOn: Binding(
                             get: { state.remoteEnabled },
                             set: { state.remoteEnabled = $0; state.onSettingsChanged() }))
-                        Note(text: "Uses ntfy.sh: the Mac listens on a private, random topic and only obeys commands carrying your secret token. The Mac must be awake and online to be reached — which is exactly the case when it's in your bag keeping work alive. Remote sleep works; a fully-asleep Mac can't be woken remotely.")
+                        HStack(spacing: 6) {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .font(.system(size: 10))
+                                .foregroundStyle(state.bleState == "advertising" || state.bleState == "phone connected" ? .blue : .secondary)
+                            Text("Nearby (Bluetooth): \(state.bleState)")
+                                .font(.system(size: 11))
+                        }
+                        Note(text: "Two links: a direct Bluetooth connection when the phone is near this Mac (works with NO internet — the in-the-bag case), and an internet relay for control from anywhere. Commands on both require your secret token. The Mac must be awake to be reached; remote sleep works, remote wake doesn't.")
                     }
                     .padding(6).frame(maxWidth: .infinity, alignment: .leading)
                 }

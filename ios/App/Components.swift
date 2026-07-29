@@ -157,7 +157,7 @@ struct UnreachableState: View {
         VStack(spacing: 12) {
             Image(systemName: "wifi.exclamationmark").font(.largeTitle).foregroundStyle(.orange)
             Text("Can't reach your Mac").font(.headline)
-            Text("It may be asleep or offline. A Mac that's already asleep can't be reached — it's only controllable while it's awake keeping work alive.")
+            Text("If you're next to the Mac, keep Bluetooth on — the direct link connects in a few seconds, no internet needed. From farther away it needs both devices online. A Mac that's already asleep can't be reached at all.")
                 .font(.subheadline).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button("Try again") { Task { await retry() } }.buttonStyle(.bordered)

@@ -175,6 +175,7 @@ final class AppState: ObservableObject {
     @Published var remoteEnabled = false
     @Published var remoteTopic = ""
     @Published var remoteToken = ""
+    @Published var bleState = "off"
 
     // Dashboard
     @Published var sessionCount = 0
@@ -301,6 +302,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     let notifier = Notifier()
     let displayAssertion = DisplayAssertion()
     let remote = RemoteControl()
+    let ble = BLELink()
     var vetoNotified = false
     var expiresAt: Date?
     var watchdogFired = false
@@ -368,9 +370,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         _ = cpuMonitor.usage()  // prime the tick baseline
         displayAssertion.set(state.preventDisplaySleep)
 
-        // Remote control (phone app / widget) over ntfy, if enabled.
+        // Phone control, if enabled: Bluetooth LE direct link (primary, works
+        // with no internet) + ntfy relay (fallback, works from anywhere).
         remote.host = self
-        if remote.enabled { RemoteControl.ensureCredentials(); remote.start() }
+        ble.host = self
+        ble.onStateChange = { [weak self] in
+            guard let self = self else { return }
+            self.state.bleState = self.ble.stateText
+        }
+        if remote.enabled {
+            RemoteControl.ensureCredentials()
+            remote.start()
+            ble.start()
+        }
 
         applyMode(animated: false)
     }
@@ -405,7 +417,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    // Start/stop the remote listener to match the current setting.
+    // Start/stop both phone transports to match the current setting.
     func syncRemote() {
         if state.remoteEnabled {
             RemoteControl.ensureCredentials()
@@ -413,8 +425,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             state.remoteTopic = UserDefaults.standard.string(forKey: "remoteTopic") ?? ""
             state.remoteToken = UserDefaults.standard.string(forKey: "remoteToken") ?? ""
             remote.restart()
+            ble.start()
         } else {
             remote.stop()
+            ble.stop()
         }
     }
 
@@ -516,6 +530,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         log("mode -> \(m.rawValue)")
         state.addEvent("Switched to \(m.title)")
         remote.pushStats(force: true)
+        ble.refreshStatus()
         let hours = state.timerHours
         expiresAt = (m != .normal && hours > 0) ? Date().addingTimeInterval(Double(hours) * 3600) : nil
         vetoNotified = false
@@ -879,6 +894,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         refreshState()
         renderIcon(awake: state.awake)
         remote.pushStats(force: false)   // rate-limited inside
+        ble.refreshStatus()              // notifies only when the snapshot changed
     }
 
     func renderIcon(awake: Bool) {

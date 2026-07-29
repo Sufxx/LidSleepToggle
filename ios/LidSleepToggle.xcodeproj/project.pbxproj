@@ -10,6 +10,7 @@
 		0241E55A81561F7C73873BFD /* LidApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 702AA855381F53A26BD6CB54 /* LidApp.swift */; };
 		0FFC0E4461D4A12D6822A125 /* LidWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 069DA85CB4118963D03B42A9 /* LidWidget.swift */; };
 		1BB9520833F280AD5C61486C /* LidIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D024BAC7F54FC18EA73D177 /* LidIntents.swift */; };
+		23F17E3AE20F229AAA3E4728 /* BLEClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0DEFB801D44A28E4D66DDD5 /* BLEClient.swift */; };
 		2BF76FDA1EB8C922C7E244F6 /* LidClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2DA04850D6AB4E0EC7DC6DF /* LidClient.swift */; };
 		38BDBCB3C1B5D2DEC9C1C102 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C7D7DCD804B9D5C649491477 /* Assets.xcassets */; };
 		4923EBD869894C57BC57FD06 /* Presentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92890341BD33D69439AEA009 /* Presentation.swift */; };
@@ -62,6 +63,7 @@
 		C7D7DCD804B9D5C649491477 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CB4CFF97A3F536F4CACDA5B4 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		CF29E9EC6C364CC0337C2A05 /* LidSleepToggle.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = LidSleepToggle.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E0DEFB801D44A28E4D66DDD5 /* BLEClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEClient.swift; sourceTree = "<group>"; };
 		E2DA04850D6AB4E0EC7DC6DF /* LidClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LidClient.swift; sourceTree = "<group>"; };
 		F50628B0063EC9E89B651432 /* LidSleepToggle.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LidSleepToggle.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -90,6 +92,7 @@
 			isa = PBXGroup;
 			children = (
 				C7D7DCD804B9D5C649491477 /* Assets.xcassets */,
+				E0DEFB801D44A28E4D66DDD5 /* BLEClient.swift */,
 				2261C80B90A4C817DFF5EA9C /* Components.swift */,
 				A5104C1C8DAD80296AC1B54E /* Info.plist */,
 				702AA855381F53A26BD6CB54 /* LidApp.swift */,
@@ -216,6 +219,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				23F17E3AE20F229AAA3E4728 /* BLEClient.swift in Sources */,
 				90DBF39A67D3574536AA3F69 /* Components.swift in Sources */,
 				0241E55A81561F7C73873BFD /* LidApp.swift in Sources */,
 				67BA335F98E9F737184CFF75 /* LidClient.swift in Sources */,

@@ -31,6 +31,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Connects directly to your Mac over Bluetooth to control it when it has no internet (e.g. closed in a bag).</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan the pairing QR code shown on your Mac to connect it.</string>
 	<key>UIBackgroundModes</key>

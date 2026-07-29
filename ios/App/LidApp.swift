@@ -23,6 +23,9 @@ enum Pairing {
         else { return false }
         LidStore.topic = topic
         LidStore.token = token
+        // Optional relay-server override rides along in the QR; absent means
+        // default (and clears any stale override from a previous pairing).
+        LidStore.server = comps.queryItems?.first(where: { $0.name == "server" })?.value ?? ""
         return true
     }
 }

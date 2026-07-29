@@ -21,6 +21,23 @@ protocol RemoteHost: AnyObject {
     func remoteStatsSnapshot() -> [String: Any]
 }
 
+// One dispatcher shared by every transport (ntfy relay, Bluetooth link), so a
+// command means the same thing no matter how it arrived.
+@discardableResult
+func performRemoteAction(_ action: String, host: RemoteHost) -> Bool {
+    switch action {
+    case "sleep", "sleepnow": host.remoteSleepNow()
+    case "mode:normal": host.remoteSetMode(.normal)
+    case "mode:always": host.remoteSetMode(.always)
+    case "mode:auto": host.remoteSetMode(.auto)
+    case "status": break   // caller pushes a fresh snapshot after any action
+    default:
+        log("remote: unknown action \(action)")
+        return false
+    }
+    return true
+}
+
 final class RemoteControl: NSObject, URLSessionDataDelegate {
     weak var host: RemoteHost?
     private var session: URLSession!
@@ -37,8 +54,26 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
     var enabled: Bool { cfgBool("remoteEnabled", false) }
     var base: String { UserDefaults.standard.string(forKey: "remoteTopic") ?? "" }
     var token: String { UserDefaults.standard.string(forKey: "remoteToken") ?? "" }
+    // Configurable relay server: the escape hatch for when one public instance
+    // is blocked or down (observed: ntfy.sh:443 unreachable while other hosts
+    // were fine). `defaults write com.sufwan.lidsleeptoggle remoteServer <url>`.
+    var server: String {
+        let s = UserDefaults.standard.string(forKey: "remoteServer") ?? ""
+        return s.isEmpty ? "https://ntfy.sh" : s
+    }
     var cmdTopic: String { base + "-cmd" }
     var statsTopic: String { base + "-stats" }
+
+    // POSTs get their own short-timeout session. The streaming session has no
+    // timeouts by design (it holds a subscription open), but publishing through
+    // it means an unreachable relay silently queues uploads forever.
+    private lazy var postSession: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 10
+        cfg.timeoutIntervalForResource = 20
+        cfg.waitsForConnectivity = false
+        return URLSession(configuration: cfg)
+    }()
 
     override init() {
         super.init()
@@ -101,7 +136,7 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
     // MARK: - Command stream (subscribe)
 
     private func connect() {
-        guard running, let url = URL(string: "https://ntfy.sh/\(cmdTopic)/json") else { return }
+        guard running, let url = URL(string: "\(server)/\(cmdTopic)/json") else { return }
         buffer.removeAll(keepingCapacity: true)
         // Streaming GET: ntfy holds the connection open and pushes one JSON
         // object per line as commands arrive.
@@ -161,21 +196,7 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
 
     private func dispatch(_ action: String) {
         guard let host = host else { return }
-        switch action {
-        case "sleep", "sleepnow":
-            host.remoteSleepNow()
-        case "mode:normal":
-            host.remoteSetMode(.normal)
-        case "mode:always":
-            host.remoteSetMode(.always)
-        case "mode:auto":
-            host.remoteSetMode(.auto)
-        case "status":
-            break   // just want a fresh snapshot
-        default:
-            log("remote: unknown action \(action)")
-            return
-        }
+        guard performRemoteAction(action, host: host) else { return }
         pushStats(force: true)
     }
 
@@ -192,7 +213,7 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
         var snap = host.remoteStatsSnapshot()
         snap["t"] = Int(now.timeIntervalSince1970)
         guard let payload = try? JSONSerialization.data(withJSONObject: snap),
-              let url = URL(string: "https://ntfy.sh/\(statsTopic)") else { return }
+              let url = URL(string: "\(server)/\(statsTopic)") else { return }
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -200,6 +221,8 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
         req.setValue("1", forHTTPHeaderField: "X-Cache")
         req.setValue("no", forHTTPHeaderField: "X-Firebase")
         req.httpBody = payload
-        session.dataTask(with: req).resume()
+        // Short-timeout session: an unreachable relay drops the push instead of
+        // queueing uploads forever on the timeout-free streaming session.
+        postSession.dataTask(with: req).resume()
     }
 }
