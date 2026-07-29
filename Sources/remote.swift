@@ -83,7 +83,20 @@ final class RemoteControl: NSObject, URLSessionDataDelegate {
         log("remote: stopped")
     }
 
-    func restart() { stop(); if enabled { start() } }
+    // Rebuild the session on restart. Reusing a session whose delegate callbacks
+    // are mid-flight during a rapid stop/start can fire a resume on a torn-down
+    // task (observed as a SIGSEGV in NSURLSessionTask resume). A fresh session
+    // guarantees no stale in-flight callbacks touch new state.
+    func restart() {
+        stop()
+        session.invalidateAndCancel()
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 0
+        cfg.timeoutIntervalForResource = 0
+        cfg.waitsForConnectivity = true
+        session = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+        if enabled { start() }
+    }
 
     // MARK: - Command stream (subscribe)
 
