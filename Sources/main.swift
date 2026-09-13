@@ -304,6 +304,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     var remotes: [RemoteControl] = []
     let ble = BLELink()
     var vetoNotified = false
+    var holdVetoed = false                 // a wanted hold is currently blocked by the governor
+    var batteryVetoLatched = false         // hysteresis so a reading jittering at the floor can't flap
+    var lastForcedSleep = Date(timeIntervalSince1970: 0)
     var expiresAt: Date?
     var watchdogFired = false
     var idleSince: Date?
@@ -569,8 +572,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         if b.present && !b.charging {
             let crit = cfgInt("batteryCritical", batteryCriticalDefault)
-            if b.percent <= crit { return "Battery \(b.percent)% — critical" }
-            if b.percent <= state.batteryFloor { return "Battery \(b.percent)% — below \(state.batteryFloor)% floor" }
+            if b.percent <= crit { batteryVetoLatched = true; return "Battery \(b.percent)% — critical" }
+            // Hysteresis: once below the floor, stay vetoed until comfortably above
+            // it (or charging), so 19%/20%/19% can't re-arm and drop the hold in a loop.
+            if b.percent <= state.batteryFloor { batteryVetoLatched = true }
+            else if b.percent >= state.batteryFloor + 5 { batteryVetoLatched = false }
+            if batteryVetoLatched { return "Battery \(b.percent)% — below \(state.batteryFloor)% floor" }
+        } else {
+            batteryVetoLatched = false
         }
         if state.thermalGuard {
             if thermalLevel() == .critical { return "Mac is critically hot" }
@@ -594,18 +603,50 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 state.addEvent("Released keep-awake — \(reason)", critical: true)
                 notifier.send(title: "Keep-awake released", body: reason,
                               event: "safety_veto", level: .critical)
-                let b = batteryInfo()
-                if b.present && !b.charging && b.percent <= cfgInt("batteryCritical", batteryCriticalDefault) {
-                    setKeepAwake(false); lastSet = false
-                    log("critical battery -> sleepnow")
-                    run(pmsetPath, ["sleepnow"])
-                }
             }
         }
         if veto == nil { vetoNotified = false }
+        holdVetoed = wantAwake && veto != nil
         state.vetoReason = veto
         state.reasons = awake ? reasons : []
         setDesired(awake, reasons: reasons)
+        enforceSafetySleep()
+    }
+
+    // Pure decision, kept separate so it can be tested without a lid to close.
+    static func shouldForceSleep(holdVetoed: Bool, critical: Bool, lidClosed: Bool) -> Bool {
+        holdVetoed && (critical || lidClosed)
+    }
+
+    // Releasing a hold only makes the Mac ELIGIBLE to sleep on the next lid-close
+    // event — and if the lid is already shut, that event already happened. Other
+    // apps' assertions (caffeinate, coreaudiod…) then block idle sleep, so a
+    // released Mac in a bag just sits there awake and drains (observed: 20% veto
+    // at 08:59, still awake at 18:51). So while the governor is blocking a hold
+    // we actively sleep it: always at critical battery, and whenever the lid is
+    // closed. Never with the lid open above critical — that's someone using it.
+    // Rate-limited and re-tried every tick until it actually sticks.
+    func enforceSafetySleep() {
+        let b = batteryInfo()
+        let critical = b.present && !b.charging
+            && b.percent <= cfgInt("batteryCritical", batteryCriticalDefault)
+        let closed = lidClosed()
+        guard AppDelegate.shouldForceSleep(holdVetoed: holdVetoed, critical: critical, lidClosed: closed),
+              Date().timeIntervalSince(lastForcedSleep) >= 60 else { return }
+        lastForcedSleep = Date()
+        let why = critical ? "battery critical" : "lid closed while held off (\(state.vetoReason ?? "safety"))"
+        log("safety: \(why) -> sleepnow")
+        state.addEvent("Sleeping the Mac — \(why)", critical: true)
+        if isKeepAwakeEnabled() { setKeepAwake(false); lastSet = false }
+        stats.end(by: "safety sleep")
+        // `defaults write com.sufwan.lidsleeptoggle safetyDryRun -bool true` exercises
+        // this whole path without actually sleeping the Mac — the only way to test a
+        // safety net that, by definition, ends the session that's testing it.
+        if cfgBool("safetyDryRun", false) {
+            log("safety: DRY RUN — would have slept the Mac now")
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { run(pmsetPath, ["sleepnow"]) }
     }
 
     // The governor tick: runs in every mode.
@@ -642,7 +683,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         switch mode {
         case .normal: applyDesired(false, reasons: [])
         case .always: applyDesired(true, reasons: ["Keep Awake"])
-        case .auto: break   // runAutoCheck drives this
+        case .auto: enforceSafetySleep()   // runAutoCheck drives the hold; keep retrying the sleep
         }
         checkOfflineSleep()
         updateUI()
@@ -794,7 +835,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func checkLid() {
         let closed = lidClosed()
-        if closed && isKeepAwakeEnabled() {
+        // Start dimming only for a held-awake Mac (an external-display clamshell
+        // setup must not get its main display blanked), but once dimmed, STAY
+        // dimmed until the lid opens — releasing the hold used to re-light the
+        // panel under a closed lid and drain the battery faster.
+        if closed && (isKeepAwakeEnabled() || dimmed) {
             if !dimmed {
                 savedDisplay = backlight.displayBrightness()
                 let d = UserDefaults.standard
