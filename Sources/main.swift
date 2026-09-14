@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import CoreGraphics
 
 
 // LidSleepToggle — a menubar app that decides when your Mac is allowed to sleep
@@ -82,6 +83,7 @@ let batteryCriticalDefault = 10 // force sleep at/below this % on battery
 let tempCeilingDefault = 95     // °C backstop, macOS thermalState can lag
 let watchdogMinutesDefault = 20 // warn when a tracked agent goes silent this long
 let offlineMinutesDefault = 15  // offline + idle + on battery for this long -> sleep
+let awayMinutesDefault = 5      // lid-open + critical: only sleep after this much no input
 
 enum Mode: String, CaseIterable, Identifiable {
     case normal, always, auto
@@ -613,9 +615,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         enforceSafetySleep()
     }
 
+    // Seconds since the last keyboard/trackpad input — the only reliable
+    // "is a human actually here?" signal when the lid is open.
+    // ⚠ Do NOT use ioreg IOHIDSystem/HIDIdleTime: that key is gone on macOS 26
+    // and silently parses to 0, which would disable the away check entirely.
+    // This public CoreGraphics call exposes timing only, never event content,
+    // so it needs no Accessibility/Input-Monitoring permission.
+    func userIdleSeconds() -> Double {
+        guard let anyInput = CGEventType(rawValue: ~0) else { return 0 }
+        return CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: anyInput)
+    }
+
     // Pure decision, kept separate so it can be tested without a lid to close.
-    static func shouldForceSleep(holdVetoed: Bool, critical: Bool, lidClosed: Bool) -> Bool {
-        holdVetoed && (critical || lidClosed)
+    //
+    // A CLOSED lid is the whole reason this exists: the hold was released but
+    // nothing re-triggers sleep, so the Mac cooks in a bag. Force it.
+    //
+    // An OPEN lid means someone may be sitting right here. Sleeping a machine
+    // out from under its user every 60s is far worse than the battery risk it
+    // averts, so with the lid open we only step in at critical battery AND only
+    // once input has stopped for `awayMinutes` — i.e. they genuinely walked off.
+    static func shouldForceSleep(holdVetoed: Bool, critical: Bool,
+                                 lidClosed: Bool, userIdle: Double,
+                                 awaySeconds: Double) -> Bool {
+        guard holdVetoed else { return false }
+        if lidClosed { return true }
+        return critical && userIdle >= awaySeconds
     }
 
     // Releasing a hold only makes the Mac ELIGIBLE to sleep on the next lid-close
@@ -631,10 +656,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let critical = b.present && !b.charging
             && b.percent <= cfgInt("batteryCritical", batteryCriticalDefault)
         let closed = lidClosed()
-        guard AppDelegate.shouldForceSleep(holdVetoed: holdVetoed, critical: critical, lidClosed: closed),
+        let idle = closed ? 0 : userIdleSeconds()
+        let away = Double(cfgInt("awayMinutes", awayMinutesDefault)) * 60
+        guard AppDelegate.shouldForceSleep(holdVetoed: holdVetoed, critical: critical,
+                                           lidClosed: closed, userIdle: idle, awaySeconds: away),
               Date().timeIntervalSince(lastForcedSleep) >= 60 else { return }
         lastForcedSleep = Date()
-        let why = critical ? "battery critical" : "lid closed while held off (\(state.vetoReason ?? "safety"))"
+        let why = closed
+            ? "lid closed while held off (\(state.vetoReason ?? "safety"))"
+            : "battery critical and idle \(Int(idle / 60))m"
         log("safety: \(why) -> sleepnow")
         state.addEvent("Sleeping the Mac — \(why)", critical: true)
         if isKeepAwakeEnabled() { setKeepAwake(false); lastSet = false }
